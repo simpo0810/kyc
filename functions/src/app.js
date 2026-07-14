@@ -29,7 +29,7 @@ function createApp({ config, db, didit, notifier, logger = console }) {
 
   // Request log line per response; skip health checks to keep logs readable.
   app.use((req, res, next) => {
-    if (req.path === "/healthz") return next();
+    if (req.path === "/health") return next();
     const start = process.hrtime.bigint();
     res.on("finish", () => {
       const ms = Number(process.hrtime.bigint() - start) / 1e6;
@@ -38,7 +38,7 @@ function createApp({ config, db, didit, notifier, logger = console }) {
     next();
   });
 
-  app.get("/healthz", (req, res) => {
+  app.get("/health", (req, res) => {
     res.status(200).json({ ok: true });
   });
 

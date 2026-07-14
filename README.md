@@ -34,7 +34,7 @@ you  ─► GET /status?key=... before releasing the trade
 | `GET /verify/complete` | Post-verification landing page. Query-string status is ignored — the webhook is the only source of truth |
 | `POST /webhooks/didit` | Didit status webhook. HMAC-SHA256 over canonical JSON (`X-Signature-V2`) + timestamp freshness (`X-Timestamp`, 300s window) verified before anything is trusted. Out-of-order retries can't regress a final status (Firestore transaction) |
 | `GET /status?key=...` | Status table, gated by `STATUS_KEY` (timing-safe compare) |
-| `GET /healthz` | Health check |
+| `GET /health` | Health check |
 
 ## One-time setup
 

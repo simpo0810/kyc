@@ -91,8 +91,8 @@ test("GET / serves the intake form", async () => {
   assert.match(html, /Binance order number/);
 });
 
-test("GET /healthz responds ok", async () => {
-  const res = await fetch(baseUrl + "/healthz");
+test("GET /health responds ok", async () => {
+  const res = await fetch(baseUrl + "/health");
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { ok: true });
 });
