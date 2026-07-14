@@ -1,0 +1,20 @@
+{
+  "name": "p2p-kyc-gate",
+  "version": "1.0.0",
+  "description": "Minimal Didit-backed identity verification gate for peer-to-peer crypto trades",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0"
+  }
+}
