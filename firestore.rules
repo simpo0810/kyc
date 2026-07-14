@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All access goes through the Cloud Function via the Admin SDK, which
+    // bypasses these rules. Nothing else may touch the data.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

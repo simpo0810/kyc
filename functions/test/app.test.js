@@ -1,7 +1,7 @@
 const { test, before, after, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { openDb } = require("../src/db");
+const { makeMemoryDb } = require("../src/memoryDb");
 const { createApp } = require("../src/app");
 
 const SECRET = "test_webhook_secret";
@@ -33,7 +33,7 @@ let sessionCounter = 0;
 const quietLogger = { info() {}, warn() {}, error() {} };
 
 before(async () => {
-  db = openDb(":memory:");
+  db = makeMemoryDb();
 
   const didit = {
     async createSession({ vendorData }) {
@@ -67,7 +67,6 @@ before(async () => {
 
 after(() => {
   server.close();
-  db.close();
 });
 
 beforeEach(() => {
@@ -105,7 +104,7 @@ test("POST /sessions creates a tagged session and redirects to Didit", async () 
   assert.equal(diditCalls.length, 1);
   assert.equal(diditCalls[0].vendorData, "order:ORDER-1001|contact:tg:@buyer");
 
-  const record = db.findOpenByOrderRef("ORDER-1001");
+  const record = await db.findOpenByOrderRef("ORDER-1001");
   assert.equal(record.status, "Not Started");
   assert.equal(record.buyer_contact, "tg:@buyer");
 });
@@ -152,7 +151,7 @@ test("webhook with a valid signature updates status and notifies", async () => {
   });
   assert.equal(res.status, 200);
 
-  assert.equal(db.getBySessionId(session_id).status, "Approved");
+  assert.equal((await db.getBySessionId(session_id)).status, "Approved");
   assert.equal(notifications.length, 1);
   assert.match(notifications[0], /ORDER-4004/);
   assert.match(notifications[0], /Approved/);
@@ -173,7 +172,7 @@ test("webhook with a bad signature is rejected and changes nothing", async () =>
     body: JSON.stringify(body),
   });
   assert.equal(res.status, 401);
-  assert.equal(db.getBySessionId(session_id).status, "Not Started");
+  assert.equal((await db.getBySessionId(session_id)).status, "Not Started");
   assert.equal(notifications.length, 0);
 });
 
@@ -197,7 +196,7 @@ test("out-of-order webhook events cannot regress a final status", async () => {
     body: JSON.stringify(stale),
   });
   assert.equal(res.status, 200, "stale events still get 200 so Didit stops retrying");
-  assert.equal(db.getBySessionId(session_id).status, "Approved");
+  assert.equal((await db.getBySessionId(session_id)).status, "Approved");
 });
 
 test("intermediate statuses update the record but do not notify", async () => {
@@ -211,7 +210,7 @@ test("intermediate statuses update the record but do not notify", async () => {
     body: JSON.stringify(body),
   });
 
-  assert.equal(db.getBySessionId(session_id).status, "In Progress");
+  assert.equal((await db.getBySessionId(session_id)).status, "In Progress");
   assert.equal(notifications.length, 0);
 });
 
@@ -225,7 +224,7 @@ test("GET /status requires the exact key", async () => {
 });
 
 test("GET /status escapes stored values", async () => {
-  db.createVerification({
+  await db.createVerification({
     orderRef: "ORDER-XSS",
     buyerContact: '<img src=x onerror=alert(1)>',
     sessionId: "sess-xss",

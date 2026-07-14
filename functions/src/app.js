@@ -73,7 +73,7 @@ function createApp({ config, db, didit, notifier, logger = console }) {
     try {
       // Double-click / lost-link protection: an open session for this order
       // is reused instead of paying for a new one.
-      const existing = db.findOpenByOrderRef(orderRef);
+      const existing = await db.findOpenByOrderRef(orderRef);
       if (existing && existing.session_url) {
         return res.redirect(303, existing.session_url);
       }
@@ -83,7 +83,7 @@ function createApp({ config, db, didit, notifier, logger = console }) {
 
       const session = await didit.createSession({ vendorData, callbackUrl });
 
-      db.createVerification({
+      await db.createVerification({
         orderRef,
         buyerContact: buyerContact || null,
         sessionId: session.session_id,
@@ -108,7 +108,7 @@ function createApp({ config, db, didit, notifier, logger = console }) {
 
   // Didit webhook: fires on every status change. Signature verified before
   // anything in the payload is trusted.
-  app.post("/webhooks/didit", (req, res) => {
+  app.post("/webhooks/didit", async (req, res) => {
     const valid = verifyWebhookSignature(
       req.body,
       req.header("X-Signature-V2"),
@@ -121,35 +121,48 @@ function createApp({ config, db, didit, notifier, logger = console }) {
       return res.status(401).send("Invalid signature");
     }
 
-    const { session_id, status, vendor_data, created_at } = req.body;
-    if (typeof session_id === "string" && typeof status === "string") {
-      const applied = db.applyStatusEvent({
-        sessionId: session_id,
-        status,
-        eventAt: Number(created_at) || 0,
-      });
+    try {
+      const { session_id, status, vendor_data, created_at } = req.body;
+      if (typeof session_id === "string" && typeof status === "string") {
+        const applied = await db.applyStatusEvent({
+          sessionId: session_id,
+          status,
+          eventAt: Number(created_at) || 0,
+        });
 
-      if (applied && NOTIFY_STATUSES.has(status)) {
-        const record = db.getBySessionId(session_id);
-        const label = record ? record.order_ref : vendor_data || session_id;
-        notifier.notify(`Verification update\nOrder: ${label}\nStatus: ${status}`);
-      } else if (!applied) {
-        logger.info(`Webhook for session ${session_id} ignored (stale event or unknown session)`);
+        if (applied && NOTIFY_STATUSES.has(status)) {
+          const record = await db.getBySessionId(session_id);
+          const label = record ? record.order_ref : vendor_data || session_id;
+          // Awaited: in serverless the instance freezes once we respond,
+          // so fire-and-forget notifications would be silently dropped.
+          await notifier.notify(`Verification update\nOrder: ${label}\nStatus: ${status}`);
+        } else if (!applied) {
+          logger.info(`Webhook for session ${session_id} ignored (stale event or unknown session)`);
+        }
       }
-    }
 
-    // Always 200 on verified payloads so Didit doesn't retry forever.
-    res.status(200).send("ok");
+      // Always 200 on verified payloads so Didit doesn't retry forever.
+      res.status(200).send("ok");
+    } catch (err) {
+      logger.error("Webhook processing failed:", err.message);
+      // 500 so Didit retries — the event was authentic but we failed to apply it.
+      res.status(500).send("processing error");
+    }
   });
 
   // Simple status list, gated by a shared key so it isn't wide open on the
   // public host. Not a dashboard — just enough to check before you trade.
-  app.get("/status", (req, res) => {
+  app.get("/status", async (req, res) => {
     const key = typeof req.query.key === "string" ? req.query.key : "";
     if (!timingSafeEqualStr(key, config.statusKey)) {
       return res.status(403).send("Forbidden");
     }
-    res.type("html").send(views.statusPage(db.listAll()));
+    try {
+      res.type("html").send(views.statusPage(await db.listAll()));
+    } catch (err) {
+      logger.error("Status list failed:", err.message);
+      res.status(500).send("Internal error");
+    }
   });
 
   app.use((req, res) => {

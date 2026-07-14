@@ -1,12 +1,12 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { openDb } = require("../src/db");
+const { makeMemoryDb } = require("../src/memoryDb");
 const { createApp } = require("../src/app");
 
 const quietLogger = { info() {}, warn() {}, error() {} };
 
 test("POST /sessions is rate-limited per IP", async () => {
-  const db = openDb(":memory:");
+  const db = makeMemoryDb();
   let calls = 0;
 
   const app = createApp({
@@ -46,6 +46,5 @@ test("POST /sessions is rate-limited per IP", async () => {
     assert.equal(calls, 2, "throttled request must not reach Didit");
   } finally {
     server.close();
-    db.close();
   }
 });
