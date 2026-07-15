@@ -36,7 +36,7 @@ test("POST /sessions is rate-limited per IP", async () => {
       fetch(baseUrl + "/sessions", {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ orderRef }).toString(),
+        body: new URLSearchParams({ handle: orderRef, q_coached: "no", q_third_party: "no", q_promised_profit: "no" }).toString(),
         redirect: "manual",
       });
 

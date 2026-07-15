@@ -6,24 +6,25 @@ function makeFirestoreDb(firestore) {
   const col = firestore.collection("verifications");
 
   return {
-    async createVerification({ orderRef, buyerContact, sessionId, sessionUrl }) {
+    async createVerification({ handle, sessionId, sessionUrl, flags, flagged }) {
       const now = new Date().toISOString();
       await col.doc(sessionId).set({
-        order_ref: orderRef,
-        buyer_contact: buyerContact || null,
+        handle,
         session_id: sessionId,
         session_url: sessionUrl,
         status: "Not Started",
+        flags: flags || {},
+        flagged: Boolean(flagged),
         last_event_at: null,
         created_at: now,
         updated_at: now,
       });
     },
 
-    async findOpenByOrderRef(orderRef) {
-      // Single-field filter avoids needing a composite index; an order has
+    async findOpenByHandle(handle) {
+      // Single-field filter avoids needing a composite index; a buyer has
       // at most a handful of sessions, so in-memory filtering is fine.
-      const snap = await col.where("order_ref", "==", orderRef).get();
+      const snap = await col.where("handle", "==", handle).get();
       const open = snap.docs.map((d) => d.data()).filter((r) => OPEN_STATUSES.includes(r.status));
       open.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
       return open[0];
@@ -32,6 +33,24 @@ function makeFirestoreDb(firestore) {
     async getBySessionId(sessionId) {
       const snap = await col.doc(sessionId).get();
       return snap.exists ? snap.data() : undefined;
+    },
+
+    // OR-merges screening flags: once a session is flagged, resubmitting the
+    // form with different answers can't clear it.
+    async mergeFlags({ sessionId, flags }) {
+      const ref = col.doc(sessionId);
+      await firestore.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return;
+        const current = snap.data();
+        const merged = { ...current.flags };
+        for (const [k, v] of Object.entries(flags)) merged[k] = merged[k] || v;
+        tx.update(ref, {
+          flags: merged,
+          flagged: Object.values(merged).some(Boolean),
+          updated_at: new Date().toISOString(),
+        });
+      });
     },
 
     // Returns true if the event was applied, false if it was stale or the

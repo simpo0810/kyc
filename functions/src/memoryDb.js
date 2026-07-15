@@ -6,23 +6,24 @@ function makeMemoryDb() {
   const bySessionId = new Map();
 
   return {
-    async createVerification({ orderRef, buyerContact, sessionId, sessionUrl }) {
+    async createVerification({ handle, sessionId, sessionUrl, flags, flagged }) {
       const now = new Date().toISOString();
       bySessionId.set(sessionId, {
-        order_ref: orderRef,
-        buyer_contact: buyerContact || null,
+        handle,
         session_id: sessionId,
         session_url: sessionUrl,
         status: "Not Started",
+        flags: flags || {},
+        flagged: Boolean(flagged),
         last_event_at: null,
         created_at: now,
         updated_at: now,
       });
     },
 
-    async findOpenByOrderRef(orderRef) {
+    async findOpenByHandle(handle) {
       const open = [...bySessionId.values()].filter(
-        (r) => r.order_ref === orderRef && OPEN_STATUSES.includes(r.status)
+        (r) => r.handle === handle && OPEN_STATUSES.includes(r.status)
       );
       open.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
       return open[0];
@@ -30,6 +31,14 @@ function makeMemoryDb() {
 
     async getBySessionId(sessionId) {
       return bySessionId.get(sessionId);
+    },
+
+    async mergeFlags({ sessionId, flags }) {
+      const current = bySessionId.get(sessionId);
+      if (!current) return;
+      for (const [k, v] of Object.entries(flags)) current.flags[k] = current.flags[k] || v;
+      current.flagged = Object.values(current.flags).some(Boolean);
+      current.updated_at = new Date().toISOString();
     },
 
     async applyStatusEvent({ sessionId, status, eventAt }) {

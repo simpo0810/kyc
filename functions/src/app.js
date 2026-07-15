@@ -5,8 +5,7 @@ const rateLimit = require("express-rate-limit");
 const { verifyWebhookSignature } = require("./verifyWebhook");
 const views = require("./views");
 
-const ORDER_REF_PATTERN = /^[A-Za-z0-9\-_]{4,64}$/;
-const MAX_CONTACT_LENGTH = 128;
+const HANDLE_PATTERN = /^[A-Za-z0-9_.\-]{3,30}$/;
 
 // Statuses worth pinging the seller about; intermediate churn
 // ("In Progress", "Awaiting User") stays visible on /status but doesn't notify.
@@ -69,35 +68,51 @@ function createApp({ config, db, didit, notifier, logger = console }) {
   });
 
   app.post("/sessions", sessionLimiter, async (req, res) => {
-    const orderRef = typeof req.body.orderRef === "string" ? req.body.orderRef.trim() : "";
-    const buyerContact =
-      typeof req.body.buyerContact === "string" ? req.body.buyerContact.trim().slice(0, MAX_CONTACT_LENGTH) : "";
+    const handle = typeof req.body.handle === "string" ? req.body.handle.trim() : "";
 
-    if (!ORDER_REF_PATTERN.test(orderRef)) {
+    if (!HANDLE_PATTERN.test(handle)) {
       return res
         .status(400)
         .type("html")
-        .send(views.intakeForm({ error: "Order number must be 4-64 letters, digits, dashes or underscores." }));
+        .send(views.intakeForm({ error: "Username must be 3-30 letters, digits, dots, dashes or underscores." }));
     }
 
+    // Every question must be answered explicitly yes or no.
+    const flags = {};
+    for (const q of views.FRAUD_QUESTIONS) {
+      const answer = req.body[`q_${q.key}`];
+      if (answer !== "yes" && answer !== "no") {
+        return res
+          .status(400)
+          .type("html")
+          .send(views.intakeForm({ error: "Please answer all three questions." }));
+      }
+      flags[q.key] = answer === "yes";
+    }
+    const flagged = Object.values(flags).some(Boolean);
+
     try {
-      // Double-click / lost-link protection: an open session for this order
-      // is reused instead of paying for a new one.
-      const existing = await db.findOpenByOrderRef(orderRef);
+      // Double-click / lost-link protection: an open session for this buyer
+      // is reused instead of paying for a new one. Flags are OR-merged so a
+      // "yes" can't be erased by resubmitting with different answers.
+      const existing = await db.findOpenByHandle(handle);
       if (existing && existing.session_url) {
+        if (flagged) {
+          await db.mergeFlags({ sessionId: existing.session_id, flags });
+        }
         return res.redirect(303, existing.session_url);
       }
 
-      const vendorData = buyerContact ? `order:${orderRef}|contact:${buyerContact}` : `order:${orderRef}`;
       const callbackUrl = config.baseUrl ? `${config.baseUrl}/verify/complete` : undefined;
 
-      const session = await didit.createSession({ vendorData, callbackUrl });
+      const session = await didit.createSession({ vendorData: `handle:${handle}`, callbackUrl });
 
       await db.createVerification({
-        orderRef,
-        buyerContact: buyerContact || null,
+        handle,
         sessionId: session.session_id,
         sessionUrl: session.url,
+        flags,
+        flagged,
       });
 
       res.redirect(303, session.url);
@@ -142,10 +157,11 @@ function createApp({ config, db, didit, notifier, logger = console }) {
 
         if (applied && NOTIFY_STATUSES.has(status)) {
           const record = await db.getBySessionId(session_id);
-          const label = record ? record.order_ref : vendor_data || session_id;
+          const label = record ? record.handle : vendor_data || session_id;
+          const flagLine = record && record.flagged ? `\n⚠ Screening flags: ${views.flagSummary(record.flags)}` : "";
           // Awaited: in serverless the instance freezes once we respond,
           // so fire-and-forget notifications would be silently dropped.
-          await notifier.notify(`Verification update\nOrder: ${label}\nStatus: ${status}`);
+          await notifier.notify(`Verification update\nBuyer: ${label}\nStatus: ${status}${flagLine}`);
         } else if (!applied) {
           logger.info(`Webhook for session ${session_id} ignored (stale event or unknown session)`);
         }
