@@ -102,6 +102,21 @@ test("CSP allows form submissions to redirect to Didit", async () => {
   assert.match(csp, /form-action 'self' https:\/\/verify\.didit\.me/);
 });
 
+test("root on the status.* domain redirects to /status, preserving the key", async () => {
+  const res = await fetch(baseUrl + "/?key=abc", {
+    headers: { "X-Forwarded-Host": "status.example.com" },
+    redirect: "manual",
+  });
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get("location"), "/status?key=abc");
+
+  const plain = await fetch(baseUrl + "/", {
+    headers: { "X-Forwarded-Host": "status.example.com" },
+    redirect: "manual",
+  });
+  assert.equal(plain.headers.get("location"), "/status");
+});
+
 test("GET /health responds ok", async () => {
   const res = await fetch(baseUrl + "/health");
   assert.equal(res.status, 200);

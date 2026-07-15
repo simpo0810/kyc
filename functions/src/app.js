@@ -52,8 +52,13 @@ function createApp({ config, db, didit, notifier, logger = console }) {
   });
 
   // Buyer-facing intake form. Same link every time — paste this URL into
-  // the Binance P2P chat for every new buyer.
+  // the Binance P2P chat for every new buyer. On the status.* domain the
+  // root goes straight to the status table instead (key still required).
   app.get("/", (req, res) => {
+    if (req.hostname && req.hostname.startsWith("status.")) {
+      const q = req.originalUrl.indexOf("?");
+      return res.redirect(302, "/status" + (q === -1 ? "" : req.originalUrl.slice(q)));
+    }
     res.type("html").send(views.intakeForm());
   });
 
