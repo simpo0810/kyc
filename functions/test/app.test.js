@@ -91,6 +91,12 @@ test("GET / serves the intake form", async () => {
   assert.match(html, /Binance order number/);
 });
 
+test("CSP allows form submissions to redirect to Didit", async () => {
+  const res = await fetch(baseUrl + "/");
+  const csp = res.headers.get("content-security-policy");
+  assert.match(csp, /form-action 'self' https:\/\/verify\.didit\.me/);
+});
+
 test("GET /health responds ok", async () => {
   const res = await fetch(baseUrl + "/health");
   assert.equal(res.status, 200);

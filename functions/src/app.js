@@ -23,7 +23,17 @@ function createApp({ config, db, didit, notifier, logger = console }) {
 
   app.set("trust proxy", 1); // Render/Fly/Railway terminate TLS at a proxy
   app.disable("x-powered-by");
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          // Chrome applies form-action to the redirect target of a form
+          // submission; without this the 303 to Didit is silently blocked.
+          formAction: ["'self'", "https://verify.didit.me"],
+        },
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: false, limit: "10kb" }));
   app.use(express.json({ limit: "100kb" }));
 
